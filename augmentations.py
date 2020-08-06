@@ -156,4 +156,18 @@ def augmix(img, k = 3, alpha = 1):
     weights = np.random.dirichlet(alpha, size = k)
     aug_img = torch.zeros_like(img)
     for idx in range(k):
-      # TODO 
+      n = np.random.randint(1, 3)
+      # CHANGE TORCH TENSOR INTO PIL IMAGE
+      tmp = img.TOPILImage()
+      for _ in range(n):
+        aug_idx = np.random.randint(len(augmentations))
+        level = np.random.randint(1, 5)
+        ftn = globals()[augmentations[aug_idx]]
+        tmp = ftn(img, level)
+      # Change PIL IMAGE BACK TO TENSOR
+      tmp = tmp.ToTensor() 
+      aug_img += weights[idx] * tmp
+    m = np.random.beta(alpha, alpha)
+    aug_img = m*img + (1-m)*aug_img
+    return aug_img
+

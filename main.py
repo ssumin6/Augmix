@@ -10,7 +10,7 @@ from torchvision import transforms
 from augmentations import augmix
 from WideResNet_pytorch.wideresnet import WideResNet
 
-PATH = "./ckpt/wrn40-2.ckpt"
+PATH = "./ckpt/baseline.ckpt"
 
 CORRUPTIONS = [
     'gaussian_noise', 'shot_noise', 'impulse_noise', 'defocus_blur',
@@ -25,7 +25,7 @@ def test(model, test_data, batch_size):
     test_loader = torch.utils.data.DataLoader(
                    test_data,
                    batch_size=batch_size,
-                   shuffle=True,
+                   shuffle=False,
                    pin_memory=True)
     with torch.no_grad():
         model.eval()
@@ -45,7 +45,8 @@ def main():
     np.random.seed(2020)
     epochs = 100
     js_loss = False
-    # lmbda = 
+    test = True
+    lmbda = 12
     batch_size = 256
     os.makedirs('./ckpt/', exist_ok=True)
 
@@ -85,47 +86,51 @@ def main():
 
     model = nn.DataParallel(model).cuda()
     cudnn.benchmark = True
-    # training model with cifar100
-    model.train()
-    losses = []
-    for epoch in range(epochs):
-        for i, (images, targets) in enumerate(train_loader):
-            if js_loss:
-                # concat original image with augmented images. 
-                images_aug1 = augmix(images)
-                images_aug2 = augmix(images)
-                images = torch.cat([images, images_aug1, images_aug2], dim=0) # [3*batch_size, # channel, 32, 32]
-                # triple the targets
-                targets = torch.repeat(3)
-                print(targets.size())
-            images, targets = images.cuda(), targets.cuda()
-            optimizer.zero_grad()
-            if js_loss:
-                logits = model(images)
-                loss = F.cross_entropy(logits[:batch_size], targets[:batch_size])
-                # add js loss
-                # loss += TODO
-            else:
-                logits = model(images)
-                loss = F.cross_entropy(logits, targets)
+    if test:
+        # training model with cifar100
+        model.train()
+        losses = []
+        for epoch in range(epochs):
+            for i, (images, targets) in enumerate(train_loader):
+                if js_loss:
+                    # concat original image with augmented images. 
+                    images_aug1 = augmix(images)
+                    images_aug2 = augmix(images)
+                    images = torch.cat([images, images_aug1, images_aug2], dim=0) # [3*batch_size, # channel, 32, 32]
+                    # triple the targets
+                    targets = torch.repeat(3)
+                    print(targets.size())
+                images, targets = images.cuda(), targets.cuda()
+                optimizer.zero_grad()
+                if js_loss:
+                    logits = model(images)
+                    loss = F.cross_entropy(logits[:batch_size], targets[:batch_size])
+                    # add js loss
+                    loss += lmbda
+                else:
+                    logits = model(images)
+                    loss = F.cross_entropy(logits, targets)
 
-            loss.backward()
-            optimizer.step()
-            scheduler.step()
+                loss.backward()
+                optimizer.step()
+                scheduler.step()
 
-            losses.append(loss.item())
-            if i % 100 == 0 or i+1 == len(train_loader):
-                print("Train Loss: {:.4f}".format(loss.item()))
+                losses.append(loss.item())
+                if i % 100 == 0 or i+1 == len(train_loader):
+                    print("Train Loss: {:.4f}".format(loss.item()))
 
-        torch.save({
-            "epoch": epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'losses': losses
-        }, PATH)
+            torch.save({
+                "epoch": epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'losses': losses
+            }, PATH)
+    else:
+        ckpt = torch.load(PATH)
+        model.load_state_dict(ckpt["model_state_dict"])
     # calculate clean error
     acc = test(model, test_data, batch_size)
-    print("[TEST] CLEAN ERROR : {:.2f}".format(acc))
+    print("[TEST] CLEAN Accuracy : {:.2f}".format(acc))
     
     # evaluate on cifar100-c
     CEs = []
@@ -134,7 +139,8 @@ def main():
         test_data.targets = torch.LongTensor(np.load('./data/cifar/CIFAR-100-C/labels.npy'))
         acc = test(model, test_data, batch_size)
         CEs.append(1-acc)
+    print(CEs)
     mCE = sum(CEs) / len(CEs)
-    print("[TEST} mCE : {:.2f}".format(mCE))
+    print("[TEST] mCE : {:.2f}".format(mCE))
 if __name__=="__main__":
     main()
