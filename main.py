@@ -45,7 +45,7 @@ def main():
     np.random.seed(2020)
     epochs = 100
     js_loss = False
-    test = True
+    model_load = True
     lmbda = 12
     batch_size = 256
     os.makedirs('./ckpt/', exist_ok=True)
@@ -86,7 +86,7 @@ def main():
 
     model = nn.DataParallel(model).cuda()
     cudnn.benchmark = True
-    if not test:
+    if not model_load:
         # training model with cifar100
         model.train()
         losses = []
