@@ -14,6 +14,7 @@
 # ==============================================================================
 """Base augmentations operators."""
 
+import torch
 import numpy as np
 from PIL import Image, ImageOps, ImageEnhance
 
@@ -147,3 +148,12 @@ augmentations_all = [
     autocontrast, equalize, posterize, rotate, solarize, shear_x, shear_y,
     translate_x, translate_y, color, contrast, brightness, sharpness
 ]
+
+def augmix(img, k = 3, alpha = 1):
+    '''
+    img : torch.Tensor [batch_size, # channel, IMAGE_SIZE, IMAGE_SIZE]
+    '''
+    weights = np.random.dirichlet(alpha, size = k)
+    aug_img = torch.zeros_like(img)
+    for idx in range(k):
+      # TODO 
