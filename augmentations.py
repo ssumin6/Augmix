@@ -17,6 +17,7 @@
 import torch
 import numpy as np
 from PIL import Image, ImageOps, ImageEnhance
+from torchvision import transforms
 
 # ImageNet code should change this value
 IMAGE_SIZE = 32
@@ -149,16 +150,16 @@ augmentations_all = [
     translate_x, translate_y, color, contrast, brightness, sharpness
 ]
 
-def augmix(img, k = 3, alpha = 1):
+def augmix(img, k = 3, alpha = 1.):
     '''
     img : torch.Tensor [batch_size, # channel, IMAGE_SIZE, IMAGE_SIZE]
     '''
-    weights = np.random.dirichlet(alpha, size = k)
+    weights = np.random.dirichlet(np.full(k, alpha))
     aug_img = torch.zeros_like(img)
     for idx in range(k):
       n = np.random.randint(1, 3)
       # CHANGE TORCH TENSOR INTO PIL IMAGE
-      tmp = img.TOPILImage()
+      tmp = [transforms.ToPILImage()(s) for s in img]
       for _ in range(n):
         aug_idx = np.random.randint(len(augmentations))
         level = np.random.randint(1, 5)
