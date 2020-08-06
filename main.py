@@ -10,7 +10,7 @@ from torchvision import transforms
 from augmentations import augmix
 from WideResNet_pytorch.wideresnet import WideResNet
 
-PATH = "./ckpt/baseline.ckpt"
+PATH = "./ckpt/augmix.ckpt"
 
 CORRUPTIONS = [
     'gaussian_noise', 'shot_noise', 'impulse_noise', 'defocus_blur',
@@ -44,8 +44,8 @@ def main():
     torch.manual_seed(2020)
     np.random.seed(2020)
     epochs = 100
-    js_loss = False
-    model_load = True
+    js_loss = True
+    model_load = False
     lmbda = 12
     batch_size = 256
     os.makedirs('./ckpt/', exist_ok=True)
@@ -106,6 +106,7 @@ def main():
                     logits = model(images)
                     loss = F.cross_entropy(logits[:batch_size], targets[:batch_size])
                     # add js loss
+                    p_origin = logits[:batch_size]
                     loss += lmbda
                 else:
                     logits = model(images)
@@ -138,6 +139,7 @@ def main():
         test_data.data = np.load('./data/cifar/CIFAR-100-C/%s.npy' % corruption)
         test_data.targets = torch.LongTensor(np.load('./data/cifar/CIFAR-100-C/labels.npy'))
         acc = test(model, test_data, batch_size)
+        print("%s: %f" %(corruption, 1-acc))
         CEs.append(1-acc)
     print(CEs)
     mCE = sum(CEs) / len(CEs)
