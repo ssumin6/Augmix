@@ -86,7 +86,7 @@ def main():
 
     model = nn.DataParallel(model).cuda()
     cudnn.benchmark = True
-    if test:
+    if not test:
         # training model with cifar100
         model.train()
         losses = []
