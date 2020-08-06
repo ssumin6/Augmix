@@ -21,6 +21,25 @@ CORRUPTIONS = [
 
 _CIFAR_MEAN, _CIFAR_STD = (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
 
+def test(model, test_data, batch_size):
+    test_loader = torch.utils.data.DataLoader(
+                   test_data,
+                   batch_size=batch_size,
+                   shuffle=True,
+                   pin_memory=True)
+    with torch.no_grad():
+        model.eval()
+        total = 0
+        correct = 0
+        for i, (images, targets) in enumerate(test_loader):
+            images, targets = images.cuda(), targets.cuda()
+            logits = model(images)
+            logits = torch.argmax(logits, dim=-1)
+            correct += targets.eq(logits).sum().item()
+            total += targets.size()[0]
+    acc = correct * 1. / total
+    return acc
+
 def main():
     torch.manual_seed(2020)
     np.random.seed(2020)
@@ -50,11 +69,6 @@ def main():
                    batch_size=batch_size,
                    shuffle=True,
                    num_workers=4,
-                   pin_memory=True)
-    test_loader = torch.utils.data.DataLoader(
-                   test_data,
-                   batch_size=batch_size,
-                   shuffle=True,
                    pin_memory=True)
     # 2. model
     # wideresnet 40-2
@@ -110,23 +124,17 @@ def main():
             'losses': losses
         }, PATH)
     # calculate clean error
-    with torch.no_grad():
-        model.eval()
-        total = 0
-        correct = 0
-        for i, (images, targets) in enumerate(test_loader):
-            images, targets = images.cuda(), targets.cuda()
-            logits = model(images)
-            logits = torch.argmax(logits, dim=-1)
-            correct += targets.eq(logits).sum().item()
-            total += targets.size()[0]
-        acc = correct * 100. / total
-        print("[TEST] Clean Error : {:.2f}.".format(acc))
-    input()
+    acc = test(model, test_data, batch_size)
+    print("[TEST] CLEAN ERROR : {:.2f}".format(acc))
+    
     # evaluate on cifar100-c
+    CEs = []
     for corruption in CORRUPTIONS:
         test_data.data = np.load('./data/cifar/CIFAR-100-C/%s.npy' % corruption)
         test_data.targets = torch.LongTensor(np.load('./data/cifar/CIFAR-100-C/labels.npy'))
-    
+        acc = test(model, test_data, batch_size)
+        CEs.append(1-acc)
+    mCE = sum(CEs) / len(CEs)
+    print("[TEST} mCE : {:.2f}".format(mCE))
 if __name__=="__main__":
     main()
