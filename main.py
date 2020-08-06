@@ -1,4 +1,5 @@
 import os
+import time
 import numpy as np
 import torch
 import torch.nn as nn
@@ -90,6 +91,7 @@ def main():
         # training model with cifar100
         model.train()
         losses = []
+        start = time.time()
         for epoch in range(epochs):
             for i, (images, targets) in enumerate(train_loader):
                 if js_loss:
@@ -97,17 +99,14 @@ def main():
                     images_aug1 = augmix(images)
                     images_aug2 = augmix(images)
                     images = torch.cat([images, images_aug1, images_aug2], dim=0) # [3*batch_size, # channel, 32, 32]
-                    # triple the targets
-                    targets = torch.repeat(3)
-                    print(targets.size())
+                
                 images, targets = images.cuda(), targets.cuda()
                 optimizer.zero_grad()
                 if js_loss:
                     logits = model(images)
-                    loss = F.cross_entropy(logits[:batch_size], targets[:batch_size])
-                    # add js loss
-                    p_origin, p_aug1, p_aug2 = F.softmax(logits[:batch_size], dim=-1), F.softmax(logits[batch_size:2*batch_size], dim=-1), F.softmax(logits[batch_size*2:], dim = -1)
-                    M = (p_origin + p_aug1 + p_aug2) / 3
+                    loss = F.cross_entropy(logits[:batch_size], targets)
+                    p_origin, p_aug1, p_aug2 = F.log_softmax(logits[:batch_size], dim=-1), F.log_softmax(logits[batch_size:2*batch_size], dim=-1), F.log_softmax(logits[batch_size*2:], dim = -1)
+                    M = torch.clamp((p_origin + p_aug1 + p_aug2) / 3., min= 1e-7, max=1.)
                     loss += lmbda * (F.kl_div(p_origin, M, reduction='batchmean')+F.kl_div(p_aug1, M, reduction='batchmean')+F.kl_div(p_aug2, M, reduction='batchmean')) / 3
                 else:
                     logits = model(images)
@@ -120,6 +119,8 @@ def main():
                 losses.append(loss.item())
                 if i % 100 == 0 or i+1 == len(train_loader):
                     print("Train Loss: {:.4f}".format(loss.item()))
+            if epoch == 0:
+                print("Time takes for 1 epochs: %s" %(time.time()-start))
 
             torch.save({
                 "epoch": epoch,

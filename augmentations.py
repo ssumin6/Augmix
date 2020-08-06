@@ -153,6 +153,7 @@ def augmix(img, k = 3, alpha = 1.):
     '''
     img : torch.Tensor [batch_size, # channel, IMAGE_SIZE, IMAGE_SIZE]
     '''
+    global augmentations
     toPIL = transforms.ToPILImage()
     toTensor = transforms.ToTensor()
     weights = np.random.dirichlet(np.full(k, alpha))
@@ -164,12 +165,11 @@ def augmix(img, k = 3, alpha = 1.):
       for _ in range(n):
         aug_idx = np.random.randint(len(augmentations))
         level = np.random.randint(1, 5)
-        ftn = locals()[augmentations[aug_idx]] # TODO : KEY ERROR 
-        tmp = [ftn(s, level) for s in tmp]
+        tmp = [augmentations[aug_idx](s, level) for s in tmp]
       # Change PIL IMAGE BACK TO TENSOR
       tmp = [toTensor(s) for s in tmp]
+      tmp = torch.stack(tmp, dim=0)
       aug_img += weights[idx] * tmp
     m = np.random.beta(alpha, alpha)
     aug_img = m*img + (1-m)*aug_img
     return aug_img
-
