@@ -106,8 +106,9 @@ def main():
                     logits = model(images)
                     loss = F.cross_entropy(logits[:batch_size], targets[:batch_size])
                     # add js loss
-                    p_origin = logits[:batch_size]
-                    loss += lmbda
+                    p_origin, p_aug1, p_aug2 = F.softmax(logits[:batch_size], dim=-1), F.softmax(logits[batch_size:2*batch_size], dim=-1), F.softmax(logits[batch_size*2:], dim = -1)
+                    M = (p_origin + p_aug1 + p_aug2) / 3
+                    loss += lmbda * (F.kl_div(p_origin, M, reduction='batchmean')+F.kl_div(p_aug1, M, reduction='batchmean')+F.kl_div(p_aug2, M, reduction='batchmean')) / 3
                 else:
                     logits = model(images)
                     loss = F.cross_entropy(logits, targets)
