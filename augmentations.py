@@ -17,10 +17,12 @@
 import torch
 import numpy as np
 from PIL import Image, ImageOps, ImageEnhance
-from torchvision import transforms
+from torch.utils.data import Dataset
 
 # ImageNet code should change this value
 IMAGE_SIZE = 32
+
+_CIFAR_MEAN, _CIFAR_STD = (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
 
 def int_parameter(level, maxval):
   """Helper function to scale `val` between 0 and maxval .
@@ -149,27 +151,37 @@ augmentations_all = [
     translate_x, translate_y, color, contrast, brightness, sharpness
 ]
 
-def augmix(img, k = 3, alpha = 1.):
+class AugmixDataset(Dataset):
+    def __init__(self, dataset, preprocess):
+      self.dataset = dataset
+      self.preprocess = preprocess
+
+    def __len__(self):
+      return len(self.dataset)
+    
+    def __getitem__(self, idx):
+      img, targets = self.dataset[idx]
+      img_aug1 = augmix(img, self.preprocess)
+      img_aug2 = augmix(img, self.preprocess)
+      img = (self.preprocess(img), img_aug1, img_aug2)
+      return img, targets
+
+def augmix(img, preprocess, k = 3, alpha = 1.):
     '''
-    img : torch.Tensor [batch_size, # channel, IMAGE_SIZE, IMAGE_SIZE]
+    img : np. array
     '''
     global augmentations
-    toPIL = transforms.ToPILImage()
-    toTensor = transforms.ToTensor()
-    weights = np.random.dirichlet(np.full(k, alpha))
-    aug_img = torch.zeros_like(img)
+  
+    weights = np.float32(np.random.dirichlet(np.full(k, alpha)))
+    aug_img = torch.zeros_like(preprocess(img))
     for idx in range(k):
-      n = np.random.randint(1, 3)
-      # CHANGE TORCH TENSOR INTO PIL IMAGE
-      tmp = [toPIL(s) for s in img]
+      n = np.random.randint(1, 4)
+      tmp = img.copy()
       for _ in range(n):
         aug_idx = np.random.randint(len(augmentations))
-        level = np.random.randint(1, 5)
-        tmp = [augmentations[aug_idx](s, level) for s in tmp]
-      # Change PIL IMAGE BACK TO TENSOR
-      tmp = [toTensor(s) for s in tmp]
-      tmp = torch.stack(tmp, dim=0)
-      aug_img += weights[idx] * tmp
-    m = np.random.beta(alpha, alpha)
-    aug_img = m*img + (1-m)*aug_img
+        level = np.random.randint(1, 6)
+        tmp = augmentations[aug_idx](tmp, level)
+      aug_img += weights[idx] * preprocess(tmp)
+    m = np.float32(np.random.beta(alpha, alpha))
+    aug_img = m * preprocess(img) + (1-m) * aug_img
     return aug_img

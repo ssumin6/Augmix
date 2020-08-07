@@ -8,7 +8,7 @@ import torch.backends.cudnn as cudnn
 from torchvision import datasets
 from torchvision import transforms
 
-from augmentations import augmix
+from augmentations import AugmixDataset
 from WideResNet_pytorch.wideresnet import WideResNet
 
 PATH = "./ckpt/augmix.ckpt"
@@ -61,17 +61,22 @@ def main():
         transforms.ToTensor(),
         transforms.Normalize(_CIFAR_MEAN, _CIFAR_STD)
     ]
-    train_transform = transforms.Compose(train_base_aug + preprocess)
+    if js_loss: 
+        train_transform = transforms.Compose(train_base_aug)
+    else:
+        train_transform = transforms.Compose(train_base_aug + preprocess)
     test_transform = transforms.Compose(preprocess)
     # load data
     train_data = datasets.CIFAR100('./data/cifar', train=True, transform=train_transform, download=True)
     test_data = datasets.CIFAR100('./data/cifar', train=False, transform=test_transform, download=True)
+    if js_loss:
+        train_data = AugmixDataset(train_data, test_transform)
     train_loader = torch.utils.data.DataLoader(
-                   train_data,
-                   batch_size=batch_size,
-                   shuffle=True,
-                   num_workers=4,
-                   pin_memory=True)
+                train_data,
+                batch_size=batch_size,
+                shuffle=True,
+                num_workers=4,
+                pin_memory=True)
     # 2. model
     # wideresnet 40-2
     model = WideResNet(depth=40, num_classes=100, widen_factor=2, drop_rate=0.0)
@@ -95,23 +100,19 @@ def main():
         for epoch in range(epochs):
             for i, (images, targets) in enumerate(train_loader):
                 if js_loss:
-                    # concat original image with augmented images. 
-                    images_aug1 = augmix(images)
-                    images_aug2 = augmix(images)
-                    images = torch.cat([images, images_aug1, images_aug2], dim=0) # [3*batch_size, # channel, 32, 32]
-                
+                    images = torch.cat(images, axis=0)
                 images, targets = images.cuda(), targets.cuda()
                 optimizer.zero_grad()
                 if js_loss:
                     logits = model(images)
-                    loss = F.cross_entropy(logits[:batch_size], targets)
-                    p_origin, p_aug1, p_aug2 = F.log_softmax(logits[:batch_size], dim=-1), F.log_softmax(logits[batch_size:2*batch_size], dim=-1), F.log_softmax(logits[batch_size*2:], dim = -1)
+                    shape = targets.size()[0]
+                    loss = F.cross_entropy(logits[:shape], targets)
+                    p_origin, p_aug1, p_aug2 = F.log_softmax(logits[:shape], dim=-1), F.log_softmax(logits[shape:2*shape], dim=-1), F.log_softmax(logits[shape*2:], dim = -1)
                     M = torch.clamp((p_origin + p_aug1 + p_aug2) / 3., min= 1e-7, max=1.)
                     loss += lmbda * (F.kl_div(p_origin, M, reduction='batchmean')+F.kl_div(p_aug1, M, reduction='batchmean')+F.kl_div(p_aug2, M, reduction='batchmean')) / 3
                 else:
                     logits = model(images)
                     loss = F.cross_entropy(logits, targets)
-
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
@@ -119,8 +120,7 @@ def main():
                 losses.append(loss.item())
                 if i % 100 == 0 or i+1 == len(train_loader):
                     print("Train Loss: {:.4f}".format(loss.item()))
-            if epoch == 0:
-                print("Time takes for 1 epochs: %s" %(time.time()-start))
+            print("Time takes for 1 epochs: %s" %(time.time()-start))
 
             torch.save({
                 "epoch": epoch,
@@ -143,7 +143,6 @@ def main():
         acc = test(model, test_data, batch_size)
         print("%s: %f" %(corruption, 1-acc))
         CEs.append(1-acc)
-    print(CEs)
     mCE = sum(CEs) / len(CEs)
     print("[TEST] mCE : {:.2f}".format(mCE))
 if __name__=="__main__":
