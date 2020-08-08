@@ -172,7 +172,7 @@ def augmix(img, preprocess, k = 3, alpha = 1.):
     '''
     global augmentations
   
-    weights = np.float32(np.random.dirichlet(np.full(k, alpha)))
+    weights = np.float32(np.random.dirichlet([alpha] * k))
     aug_img = torch.zeros_like(preprocess(img))
     for idx in range(k):
       n = np.random.randint(1, 4)

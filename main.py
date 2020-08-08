@@ -107,9 +107,9 @@ def main():
                     logits = model(images)
                     shape = targets.size()[0]
                     loss = F.cross_entropy(logits[:shape], targets)
-                    p_origin, p_aug1, p_aug2 = F.log_softmax(logits[:shape], dim=-1), F.log_softmax(logits[shape:2*shape], dim=-1), F.log_softmax(logits[shape*2:], dim = -1)
-                    M = torch.clamp((p_origin + p_aug1 + p_aug2) / 3., min= 1e-7, max=1.)
-                    loss += lmbda * (F.kl_div(p_origin, M, reduction='batchmean')+F.kl_div(p_aug1, M, reduction='batchmean')+F.kl_div(p_aug2, M, reduction='batchmean')) / 3
+                    p_origin, p_aug1, p_aug2 = F.softmax(logits[:shape], dim=-1), F.softmax(logits[shape:2*shape], dim=-1), F.softmax(logits[shape*2:], dim = -1)
+                    M = torch.clamp((p_origin + p_aug1 + p_aug2) / 3., min= 1e-7, max=1.).log()
+                    loss += lmbda * (F.kl_div(M, p_origin, reduction='batchmean')+F.kl_div(M, p_aug1, reduction='batchmean')+F.kl_div(M, p_aug2, reduction='batchmean')) / 3.
                 else:
                     logits = model(images)
                     loss = F.cross_entropy(logits, targets)
@@ -120,8 +120,8 @@ def main():
                 losses.append(loss.item())
                 if i % 100 == 0 or i+1 == len(train_loader):
                     print("Train Loss: {:.4f}".format(loss.item()))
-            print("Time takes for 1 epochs: %s" %(time.time()-start))
-
+            if epoch == 0:
+                print("Time takes for 1 epochs: %s" %(time.time()-start))
             torch.save({
                 "epoch": epoch,
                 'model_state_dict': model.state_dict(),
@@ -132,7 +132,7 @@ def main():
         ckpt = torch.load(PATH)
         model.load_state_dict(ckpt["model_state_dict"])
     # calculate clean error
-    acc = test(model, test_data, batch_size)
+    acc = test(model, test_data, 2000)
     print("[TEST] CLEAN Accuracy : {:.2f}".format(acc))
     
     # evaluate on cifar100-c
@@ -140,7 +140,7 @@ def main():
     for corruption in CORRUPTIONS:
         test_data.data = np.load('./data/cifar/CIFAR-100-C/%s.npy' % corruption)
         test_data.targets = torch.LongTensor(np.load('./data/cifar/CIFAR-100-C/labels.npy'))
-        acc = test(model, test_data, batch_size)
+        acc = test(model, test_data, 2000)
         print("%s: %f" %(corruption, 1-acc))
         CEs.append(1-acc)
     mCE = sum(CEs) / len(CEs)
