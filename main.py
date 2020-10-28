@@ -1,5 +1,6 @@
 import os
 import time
+from tqdm import tqdm
 import numpy as np
 import torch
 import torch.nn as nn
@@ -49,6 +50,7 @@ def main():
     model_load = False
     lmbda = 12
     batch_size = 256
+    dataset = "CIFAR-10"
     os.makedirs('./ckpt/', exist_ok=True)
 
     # 1. dataload
@@ -67,8 +69,12 @@ def main():
         train_transform = transforms.Compose(train_base_aug + preprocess)
     test_transform = transforms.Compose(preprocess)
     # load data
-    train_data = datasets.CIFAR100('./data/cifar', train=True, transform=train_transform, download=True)
-    test_data = datasets.CIFAR100('./data/cifar', train=False, transform=test_transform, download=True)
+    if dataset == "CIFAR-10":
+        train_data = datasets.CIFAR10('./data/cifar', train=True, transform=train_transform, download=True)
+        test_data = datasets.CIFAR10('./data/cifar', train=False, transform=test_transform, download=True)
+    else:
+        train_data = datasets.CIFAR100('./data/cifar', train=True, transform=train_transform, download=True)
+        test_data = datasets.CIFAR100('./data/cifar', train=False, transform=test_transform, download=True)
     if js_loss:
         train_data = AugmixDataset(train_data, test_transform)
     train_loader = torch.utils.data.DataLoader(
@@ -79,7 +85,8 @@ def main():
                 pin_memory=True)
     # 2. model
     # wideresnet 40-2
-    model = WideResNet(depth=40, num_classes=100, widen_factor=2, drop_rate=0.0)
+    n_classes = 10 if dataset=="CIFAR-10" else 100
+    model = WideResNet(depth=40, num_classes=n_classes, widen_factor=2, drop_rate=0.0)
 
     # 3. Optimizer & Scheduler
     optimizer = torch.optim.SGD(
@@ -98,7 +105,7 @@ def main():
         losses = []
         start = time.time()
         for epoch in range(epochs):
-            for i, (images, targets) in enumerate(train_loader):
+            for i, (images, targets) in tqdm(enumerate(train_loader)):
                 if js_loss:
                     images = torch.cat(images, axis=0)
                 images, targets = images.cuda(), targets.cuda()
@@ -116,12 +123,10 @@ def main():
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
-
                 losses.append(loss.item())
-                if i % 100 == 0 or i+1 == len(train_loader):
-                    print("Train Loss: {:.4f}".format(loss.item()))
             if epoch == 0:
                 print("Time takes for 1 epochs: %s" %(time.time()-start))
+            print("Train Loss: {:.4f}".format(loss.item()))
             torch.save({
                 "epoch": epoch,
                 'model_state_dict': model.state_dict(),
@@ -138,12 +143,13 @@ def main():
     # evaluate on cifar100-c
     CEs = []
     for corruption in CORRUPTIONS:
-        test_data.data = np.load('./data/cifar/CIFAR-100-C/%s.npy' % corruption)
-        test_data.targets = torch.LongTensor(np.load('./data/cifar/CIFAR-100-C/labels.npy'))
+        test_data.data = np.load('./data/cifar/'+dataset+'-C/%s.npy' % corruption)
+        test_data.targets = torch.LongTensor(np.load('./data/cifar/'+dataset+'-C/labels.npy'))
         acc = test(model, test_data, 2000)
         print("%s: %f" %(corruption, 1-acc))
         CEs.append(1-acc)
     mCE = sum(CEs) / len(CEs)
     print("[TEST] mCE : {:.2f}".format(mCE))
+
 if __name__=="__main__":
     main()
